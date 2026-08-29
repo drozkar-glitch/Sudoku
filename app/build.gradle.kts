@@ -5,16 +5,12 @@ plugins {
 
 android {
     namespace = "cz.mares.sudoku"
-    compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
-    }
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "cz.mares.sudoku"
-        minSdk = 33
-        targetSdk = 36
+        minSdk = 30
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0"
 
@@ -53,4 +49,5 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.4")
 }
