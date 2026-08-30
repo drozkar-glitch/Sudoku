@@ -62,6 +62,16 @@ class SudokuViewModel : ViewModel() {
         }
     }
 
+    fun pauseTimer() {
+        timerJob?.cancel()
+    }
+
+    fun resumeTimer() {
+        if (!_state.value.isGameOver && _state.value.grid.isNotEmpty()) {
+            startTimer()
+        }
+    }
+
     fun selectCell(row: Int, col: Int) {
         if (_state.value.isGameOver) return
         _state.update { it.copy(selectedRow = row, selectedCol = col) }

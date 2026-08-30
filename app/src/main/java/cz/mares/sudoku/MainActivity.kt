@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -34,8 +36,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Okamžité spuštění výchozí hry při startu aplikace
-        viewModel.startNewGame(GameMode.CLASSIC, Difficulty.EASY)
+        // Spustí novou hru pouze pokud je mřížka prázdná (první start),
+        // čímž zabráníme resetu při minimalizaci nebo otočení telefonu.
+        if (viewModel.state.value.grid.isEmpty()) {
+            viewModel.startNewGame(GameMode.CLASSIC, Difficulty.EASY)
+        }
 
         setContent {
             SudokuTheme {
