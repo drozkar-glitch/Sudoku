@@ -1,6 +1,8 @@
 package cz.mares.sudoku.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import android.content.Context
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import cz.mares.sudoku.engine.Difficulty
 import cz.mares.sudoku.engine.GameMode
@@ -23,27 +25,34 @@ data class SudokuGameState(
     val timerSeconds: Int = 0,
     val isHintUsed: Boolean = false,
     val isGameOver: Boolean = false,
-    val currentMode: GameMode = GameMode.CLASSIC
+    val currentMode: GameMode = GameMode.CLASSIC,
+    val currentDifficulty: Difficulty = Difficulty.EASY
 )
 
-class SudokuViewModel : ViewModel() {
+class SudokuViewModel(application: Application) : AndroidViewModel(application) {
 
     private val engine = SudokuEngine()
+
+    // Trvalá paměť pro nejlepší časy (4x3)
+    private val prefs = application.getSharedPreferences("SudokuBestTimes", Context.MODE_PRIVATE)
 
     private val _state = MutableStateFlow(SudokuGameState())
     val state: StateFlow<SudokuGameState> = _state.asStateFlow()
 
     private var timerJob: Job? = null
+    private var isTimerRunning = false
 
-    /**
-     * Vygeneruje novou mřížku a vyresetuje časovač i nápovědu.
-     */
+    fun getBestTime(mode: GameMode, difficulty: Difficulty): Int {
+        return prefs.getInt("${mode.name}_${difficulty.name}", 0)
+    }
+
     fun startNewGame(mode: GameMode, difficulty: Difficulty) {
         viewModelScope.launch {
             val newGrid = engine.generateGame(mode, difficulty)
             _state.value = SudokuGameState(
                 grid = newGrid,
                 currentMode = mode,
+                currentDifficulty = difficulty,
                 isHintUsed = false,
                 timerSeconds = 0,
                 isGameOver = false
@@ -54,20 +63,24 @@ class SudokuViewModel : ViewModel() {
 
     private fun startTimer() {
         timerJob?.cancel()
+        isTimerRunning = true
         timerJob = viewModelScope.launch {
-            while (!_state.value.isGameOver) {
+            while (isTimerRunning && !_state.value.isGameOver) {
                 delay(1000L)
-                _state.update { it.copy(timerSeconds = it.timerSeconds + 1) }
+                if (isTimerRunning) {
+                    _state.update { it.copy(timerSeconds = it.timerSeconds + 1) }
+                }
             }
         }
     }
 
     fun pauseTimer() {
+        isTimerRunning = false
         timerJob?.cancel()
     }
 
     fun resumeTimer() {
-        if (!_state.value.isGameOver && _state.value.grid.isNotEmpty()) {
+        if (!_state.value.isGameOver && _state.value.grid.isNotEmpty() && !isTimerRunning) {
             startTimer()
         }
     }
@@ -93,14 +106,12 @@ class SudokuViewModel : ViewModel() {
         if (cell.isGiven) return
 
         val newGrid = currentState.grid.map { it.toMutableList() }.toMutableList()
-        newGrid[row][col] = cell.copy(value = 0, isError = false)
+        // Guma nyní bezpečně maže klasická čísla i poznámky
+        newGrid[row][col] = cell.copy(value = 0, isError = false, notes = emptySet())
 
         _state.update { it.copy(grid = newGrid) }
     }
 
-    /**
-     * Zpracuje kliknutí na číslo v číselníku (1-9).
-     */
     fun onNumberInput(number: Int) {
         val currentState = _state.value
         if (currentState.isGameOver) return
@@ -114,17 +125,14 @@ class SudokuViewModel : ViewModel() {
         val newGrid = currentState.grid.map { it.toMutableList() }.toMutableList()
 
         if (currentState.isNotesMode) {
-            // Přepínání malých poznámek v rohu políčka
             val newNotes = cell.notes.toMutableSet()
             if (newNotes.contains(number)) newNotes.remove(number) else newNotes.add(number)
             newGrid[row][col] = cell.copy(notes = newNotes, value = 0, isError = false)
         } else {
-            // Ostrý tah - zkontrolujeme chytře přes engine, zda nedělá chybu
             val intGrid = Array(9) { r -> IntArray(9) { c -> currentState.grid[r][c].value } }
-            intGrid[row][col] = 0 // Ignorujeme původní hodnotu v tomto políčku pro validaci
+            intGrid[row][col] = 0
 
             val isValid = engine.isValid(intGrid, row, col, number, currentState.currentMode)
-
             newGrid[row][col] = cell.copy(value = number, notes = emptySet(), isError = !isValid)
         }
 
@@ -132,9 +140,6 @@ class SudokuViewModel : ViewModel() {
         checkWinCondition(newGrid)
     }
 
-    /**
-     * Nápověda (1x za hru). Bezpečně dopočítá správné číslo pro aktuální políčko.
-     */
     fun useHint() {
         val currentState = _state.value
         if (currentState.isHintUsed || currentState.isGameOver) return
@@ -146,8 +151,6 @@ class SudokuViewModel : ViewModel() {
         if (cell.isGiven) return
 
         viewModelScope.launch {
-            // Pro jistotu vyřešíme mřížku od nuly jen z předvyplněných čísel,
-            // aby uživatelovy případné chyby jinde na desce nerozbily výpočet
             val solverGrid = Array(9) { r ->
                 IntArray(9) { c ->
                     if (currentState.grid[r][c].isGiven) currentState.grid[r][c].value else 0
@@ -170,11 +173,20 @@ class SudokuViewModel : ViewModel() {
         val isComplete = grid.flatten().all { it.value != 0 && !it.isError }
         if (isComplete) {
             _state.update { it.copy(isGameOver = true) }
-            timerJob?.cancel()
+            pauseTimer()
+
+            val finalState = _state.value
+            val currentBest = getBestTime(finalState.currentMode, finalState.currentDifficulty)
+
+            if (currentBest == 0 || finalState.timerSeconds < currentBest) {
+                prefs.edit().putInt(
+                    "${finalState.currentMode.name}_${finalState.currentDifficulty.name}",
+                    finalState.timerSeconds
+                ).apply()
+            }
         }
     }
 
-    // Minigenerátor pro výpočet nápovědy na pozadí
     private fun solveForHint(grid: Array<IntArray>, mode: GameMode): Boolean {
         for (r in 0 until 9) {
             for (c in 0 until 9) {
@@ -195,6 +207,6 @@ class SudokuViewModel : ViewModel() {
 
     override fun onCleared() {
         super.onCleared()
-        timerJob?.cancel()
+        pauseTimer()
     }
 }
