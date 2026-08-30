@@ -106,7 +106,6 @@ class SudokuViewModel(application: Application) : AndroidViewModel(application) 
         if (cell.isGiven) return
 
         val newGrid = currentState.grid.map { it.toMutableList() }.toMutableList()
-        // Guma nyní bezpečně maže klasická čísla i poznámky
         newGrid[row][col] = cell.copy(value = 0, isError = false, notes = emptySet())
 
         _state.update { it.copy(grid = newGrid) }
@@ -126,7 +125,13 @@ class SudokuViewModel(application: Application) : AndroidViewModel(application) 
 
         if (currentState.isNotesMode) {
             val newNotes = cell.notes.toMutableSet()
-            if (newNotes.contains(number)) newNotes.remove(number) else newNotes.add(number)
+            if (newNotes.contains(number)) {
+                // Pokud už číslo v poznámce je, smažeme ho
+                newNotes.remove(number)
+            } else if (newNotes.size < 2) {
+                // Přidáme nové číslo jen pokud jich je tam zatím méně než 2
+                newNotes.add(number)
+            }
             newGrid[row][col] = cell.copy(notes = newNotes, value = 0, isError = false)
         } else {
             val intGrid = Array(9) { r -> IntArray(9) { c -> currentState.grid[r][c].value } }

@@ -277,28 +277,24 @@ fun getCellColor(row: Int, col: Int, isSelected: Boolean, isError: Boolean, mode
 
 @Composable
 fun NotesGrid(notes: Set<Int>) {
-    Column(modifier = Modifier.fillMaxSize().padding(1.dp)) {
-        for (r in 0 until 3) {
-            Row(modifier = Modifier.weight(1f)) {
-                for (c in 0 until 3) {
-                    val num = r * 3 + c + 1
-                    Text(
-                        // Vložení prázdného stringu pevně udrží tvar mřížky
-                        text = if (notes.contains(num)) num.toString() else "",
-                        fontSize = 12.sp,
-                        modifier = Modifier.weight(1f),
-                        textAlign = TextAlign.Center,
-                        color = Color.DarkGray,
-                        fontWeight = FontWeight.Bold,
-                        style = androidx.compose.ui.text.TextStyle(
-                            platformStyle = androidx.compose.ui.text.PlatformTextStyle(
-                                includeFontPadding = false
-                            )
-                        )
-                    )
-                }
-            }
-        }
+    Box(
+        modifier = Modifier.fillMaxSize().padding(2.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            // Číslice se seřadí a oddělí mezerou, např. "1 3 7"
+            text = notes.sorted().joinToString(" "),
+            fontSize = 16.sp,
+            color = Color.DarkGray,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            lineHeight = 16.sp,
+            style = androidx.compose.ui.text.TextStyle(
+                platformStyle = androidx.compose.ui.text.PlatformTextStyle(
+                    includeFontPadding = false
+                )
+            )
+        )
     }
 }
 
