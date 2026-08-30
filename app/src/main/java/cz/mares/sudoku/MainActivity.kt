@@ -53,6 +53,18 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun SudokuScreen(viewModel: SudokuViewModel, modifier: Modifier = Modifier) {
     val state by viewModel.state.collectAsState()
+    var showNewGameDialog by remember { mutableStateOf(false) }
+
+    // Dialogové okno pro novou hru
+    if (showNewGameDialog) {
+        NewGameDialog(
+            onDismiss = { showNewGameDialog = false },
+            onConfirm = { mode, difficulty ->
+                viewModel.startNewGame(mode, difficulty)
+                showNewGameDialog = false
+            }
+        )
+    }
 
     Column(
         modifier = modifier
@@ -61,8 +73,12 @@ fun SudokuScreen(viewModel: SudokuViewModel, modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        // Hlavička s časem a módem
-        TopBar(state.timerSeconds, state.currentMode)
+        // Hlavička s časem a tlačítkem pro novou hru
+        TopBar(
+            timerSeconds = state.timerSeconds,
+            mode = state.currentMode,
+            onNewGameClick = { showNewGameDialog = true }
+        )
 
         // Herní mřížka (pokud je ještě prázdná, ukáže se načítání)
         if (state.grid.isNotEmpty()) {
@@ -94,7 +110,7 @@ fun SudokuScreen(viewModel: SudokuViewModel, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun TopBar(timerSeconds: Int, mode: GameMode) {
+fun TopBar(timerSeconds: Int, mode: GameMode, onNewGameClick: () -> Unit) {
     val minutes = timerSeconds / 60
     val seconds = timerSeconds % 60
     Row(
@@ -104,9 +120,71 @@ fun TopBar(timerSeconds: Int, mode: GameMode) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = "Mód: ${mode.name}", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Button(onClick = onNewGameClick) {
+            Text("Nová hra (${mode.name})")
+        }
         Text(text = String.format("Čas: %02d:%02d", minutes, seconds), fontSize = 20.sp)
     }
+}
+
+@Composable
+fun NewGameDialog(onDismiss: () -> Unit, onConfirm: (GameMode, Difficulty) -> Unit) {
+    var selectedMode by remember { mutableStateOf(GameMode.CLASSIC) }
+    var selectedDifficulty by remember { mutableStateOf(Difficulty.EASY) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = "Nová hra", fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Text(text = "Mód hry:", fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+                GameMode.values().forEach { mode ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedMode = mode }
+                            .padding(vertical = 4.dp)
+                    ) {
+                        RadioButton(
+                            selected = selectedMode == mode,
+                            onClick = { selectedMode = mode }
+                        )
+                        Text(text = mode.name, modifier = Modifier.padding(start = 8.dp))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(text = "Obtížnost:", fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+                Difficulty.values().forEach { diff ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedDifficulty = diff }
+                            .padding(vertical = 4.dp)
+                    ) {
+                        RadioButton(
+                            selected = selectedDifficulty == diff,
+                            onClick = { selectedDifficulty = diff }
+                        )
+                        Text(text = diff.name, modifier = Modifier.padding(start = 8.dp))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(selectedMode, selectedDifficulty) }) {
+                Text("Spustit")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Zrušit")
+            }
+        }
+    )
 }
 
 @Composable
