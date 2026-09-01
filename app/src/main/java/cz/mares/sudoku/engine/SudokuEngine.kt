@@ -38,6 +38,13 @@ class SudokuEngine {
 
     private val jigsawRegions: Array<Array<Pair<Int, Int>>> = Array(9) { emptyArray() }
 
+    // Pojistky proti zamrznutí
+    private var fillIterations = 0
+    private val MAX_FILL_ITERATIONS = 2000
+
+    private var solveIterations = 0
+    private val MAX_SOLVE_ITERATIONS = 2000
+
     init {
         val tempRegions = Array(9) { mutableListOf<Pair<Int, Int>>() }
         for (r in 0 until 9) {
@@ -51,10 +58,28 @@ class SudokuEngine {
     }
 
     fun generateGame(mode: GameMode, difficulty: Difficulty): List<List<SudokuCell>> {
-        val grid = Array(9) { IntArray(9) }
+        var grid = Array(9) { IntArray(9) }
+        var success = false
+        var attempts = 0
 
-        fillGrid(grid, mode)
+        // 1. ZÁCHRANNÁ BRZDA (Las Vegas algoritmus):
+        // Pokud generátor uvízne ve slepé uličce, prostě to po 2000 krocích zahodí a zkusí znovu.
+        while (!success && attempts < 100) {
+            grid = Array(9) { IntArray(9) }
+            fillIterations = 0
+            if (fillGrid(grid, mode)) {
+                success = true
+            }
+            attempts++
+        }
 
+        // Failsafe: Kdyby byl tvůj Jigsaw tvar matematicky zcela neřešitelný,
+        // vyhodí to aspoň klasickou hru, aby to netočilo kolečkem do nekonečna.
+        if (!success) {
+            return generateGame(GameMode.CLASSIC, difficulty)
+        }
+
+        // 2. ODEBÍRÁNÍ ČÍSEL
         var cellsToRemove = 81 - difficulty.clues
         val positions = mutableListOf<Pair<Int, Int>>()
         for (r in 0 until 9) {
@@ -72,7 +97,8 @@ class SudokuEngine {
             val temp = grid[r][c]
             grid[r][c] = 0
 
-            // Zrychlený validátor nyní dokáže tuto zkoušku udělat mrknutím oka
+            solveIterations = 0
+            // Pokud i validátor trvá moc dlouho (např. vymetá slepé uličky), raději si číslo necháme
             if (countSolutions(grid, mode, limit = 2) == 1) {
                 cellsToRemove--
             } else {
@@ -92,10 +118,6 @@ class SudokuEngine {
         }
     }
 
-    /**
-     * MRV algoritmus: Najde to prázdné políčko, které má NEJMÉNĚ možných platných čísel.
-     * Zabrání tomu, aby se počítač zacyklil u složitých nepravidelných tvarů.
-     */
     private fun findBestEmptyCell(grid: Array<IntArray>, mode: GameMode): Pair<Int, Int>? {
         var bestRow = -1
         var bestCol = -1
@@ -109,27 +131,28 @@ class SudokuEngine {
                         if (isValid(grid, r, c, num, mode)) options++
                     }
 
-                    // Brutální urychlení: Pokud do buňky nejde nic napsat, je to slepá ulička, rovnou to ukončí
-                    if (options == 0) return Pair(-1, -1)
+                    if (options == 0) return Pair(-1, -1) // Slepá ulička, rovnou končíme větev
 
                     if (options < minOptions) {
                         minOptions = options
                         bestRow = r
                         bestCol = c
-                        // Pokud najdeme buňku s jedinou možností, nehledáme dál
                         if (minOptions == 1) return Pair(bestRow, bestCol)
                     }
                 }
             }
         }
-        if (bestRow == -1) return null // Všechna políčka jsou vyplněná
+        if (bestRow == -1) return null
         return Pair(bestRow, bestCol)
     }
 
     private fun fillGrid(grid: Array<IntArray>, mode: GameMode): Boolean {
+        fillIterations++
+        if (fillIterations > MAX_FILL_ITERATIONS) return false // Spuštění záchranné brzdy
+
         val bestCell = findBestEmptyCell(grid, mode)
         if (bestCell == null) return true // Mřížka je plná
-        if (bestCell.first == -1) return false // Hra narazila na neřešitelnou slepou uličku
+        if (bestCell.first == -1) return false // Slepá ulička
 
         val r = bestCell.first
         val c = bestCell.second
@@ -146,9 +169,12 @@ class SudokuEngine {
     }
 
     private fun countSolutions(grid: Array<IntArray>, mode: GameMode, limit: Int): Int {
+        solveIterations++
+        if (solveIterations > MAX_SOLVE_ITERATIONS) return limit // Pojistka, aby to nezamrzlo na jedné díře
+
         val bestCell = findBestEmptyCell(grid, mode)
-        if (bestCell == null) return 1 // Žádné volné místo = 1 řešení
-        if (bestCell.first == -1) return 0 // Slepá ulička
+        if (bestCell == null) return 1
+        if (bestCell.first == -1) return 0
 
         val r = bestCell.first
         val c = bestCell.second
