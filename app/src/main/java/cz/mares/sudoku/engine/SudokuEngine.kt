@@ -36,7 +36,6 @@ class SudokuEngine {
         intArrayOf(6, 6, 6, 8, 8, 8, 8, 7, 7)
     )
 
-    // ZRYCHLENÍ JIGSAW: Předpočítaná mapa souřadnic pro každý z 9 regionů
     private val jigsawRegions: Array<Array<Pair<Int, Int>>> = Array(9) { emptyArray() }
 
     init {
@@ -73,6 +72,7 @@ class SudokuEngine {
             val temp = grid[r][c]
             grid[r][c] = 0
 
+            // Zrychlený validátor nyní dokáže tuto zkoušku udělat mrknutím oka
             if (countSolutions(grid, mode, limit = 2) == 1) {
                 cellsToRemove--
             } else {
@@ -92,50 +92,73 @@ class SudokuEngine {
         }
     }
 
-    private fun fillGrid(grid: Array<IntArray>, mode: GameMode): Boolean {
+    /**
+     * MRV algoritmus: Najde to prázdné políčko, které má NEJMÉNĚ možných platných čísel.
+     * Zabrání tomu, aby se počítač zacyklil u složitých nepravidelných tvarů.
+     */
+    private fun findBestEmptyCell(grid: Array<IntArray>, mode: GameMode): Pair<Int, Int>? {
+        var bestRow = -1
+        var bestCol = -1
+        var minOptions = 10
+
         for (r in 0 until 9) {
             for (c in 0 until 9) {
                 if (grid[r][c] == 0) {
-                    val numbers = (1..9).shuffled()
-                    for (num in numbers) {
-                        if (isValid(grid, r, c, num, mode)) {
-                            grid[r][c] = num
-                            if (fillGrid(grid, mode)) return true
-                            grid[r][c] = 0
-                        }
+                    var options = 0
+                    for (num in 1..9) {
+                        if (isValid(grid, r, c, num, mode)) options++
                     }
-                    return false
+
+                    // Brutální urychlení: Pokud do buňky nejde nic napsat, je to slepá ulička, rovnou to ukončí
+                    if (options == 0) return Pair(-1, -1)
+
+                    if (options < minOptions) {
+                        minOptions = options
+                        bestRow = r
+                        bestCol = c
+                        // Pokud najdeme buňku s jedinou možností, nehledáme dál
+                        if (minOptions == 1) return Pair(bestRow, bestCol)
+                    }
                 }
             }
         }
-        return true
+        if (bestRow == -1) return null // Všechna políčka jsou vyplněná
+        return Pair(bestRow, bestCol)
+    }
+
+    private fun fillGrid(grid: Array<IntArray>, mode: GameMode): Boolean {
+        val bestCell = findBestEmptyCell(grid, mode)
+        if (bestCell == null) return true // Mřížka je plná
+        if (bestCell.first == -1) return false // Hra narazila na neřešitelnou slepou uličku
+
+        val r = bestCell.first
+        val c = bestCell.second
+
+        val numbers = (1..9).shuffled()
+        for (num in numbers) {
+            if (isValid(grid, r, c, num, mode)) {
+                grid[r][c] = num
+                if (fillGrid(grid, mode)) return true
+                grid[r][c] = 0 // Backtrack
+            }
+        }
+        return false
     }
 
     private fun countSolutions(grid: Array<IntArray>, mode: GameMode, limit: Int): Int {
-        var emptyRow = -1
-        var emptyCol = -1
-        var isEmpty = false
+        val bestCell = findBestEmptyCell(grid, mode)
+        if (bestCell == null) return 1 // Žádné volné místo = 1 řešení
+        if (bestCell.first == -1) return 0 // Slepá ulička
 
-        for (i in 0 until 9) {
-            for (j in 0 until 9) {
-                if (grid[i][j] == 0) {
-                    emptyRow = i
-                    emptyCol = j
-                    isEmpty = true
-                    break
-                }
-            }
-            if (isEmpty) break
-        }
-
-        if (!isEmpty) return 1
-
+        val r = bestCell.first
+        val c = bestCell.second
         var count = 0
+
         for (num in 1..9) {
-            if (isValid(grid, emptyRow, emptyCol, num, mode)) {
-                grid[emptyRow][emptyCol] = num
+            if (isValid(grid, r, c, num, mode)) {
+                grid[r][c] = num
                 count += countSolutions(grid, mode, limit)
-                grid[emptyRow][emptyCol] = 0
+                grid[r][c] = 0 // Backtrack
                 if (count >= limit) return count
             }
         }
@@ -149,7 +172,6 @@ class SudokuEngine {
         }
 
         if (mode == GameMode.JIGSAW) {
-            // ZRYCHLENÉ HLEDÁNÍ: Místo 81 políček prochází přesně jen těch 9 v daném tvaru
             val regionId = jigsawLayout[row][col]
             for (cell in jigsawRegions[regionId]) {
                 if (grid[cell.first][cell.second] == num) return false
