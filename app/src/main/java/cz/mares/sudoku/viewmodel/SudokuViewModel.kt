@@ -8,6 +8,7 @@ import cz.mares.sudoku.engine.Difficulty
 import cz.mares.sudoku.engine.GameMode
 import cz.mares.sudoku.engine.SudokuCell
 import cz.mares.sudoku.engine.SudokuEngine
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,8 +16,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-// Datová třída uchovávající kompletní aktuální stav obrazovky
 data class SudokuGameState(
     val grid: List<List<SudokuCell>> = emptyList(),
     val selectedRow: Int? = null,
@@ -33,7 +34,6 @@ class SudokuViewModel(application: Application) : AndroidViewModel(application) 
 
     private val engine = SudokuEngine()
 
-    // Trvalá paměť pro nejlepší časy (4x3)
     private val prefs = application.getSharedPreferences("SudokuBestTimes", Context.MODE_PRIVATE)
 
     private val _state = MutableStateFlow(SudokuGameState())
@@ -47,8 +47,16 @@ class SudokuViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun startNewGame(mode: GameMode, difficulty: Difficulty) {
+        // Ihned vyčistíme mřížku, UI zareaguje a začne točit načítací kolečko
+        pauseTimer()
+        _state.update { it.copy(grid = emptyList(), isGameOver = false) }
+
         viewModelScope.launch {
-            val newGrid = engine.generateGame(mode, difficulty)
+            // Bezpečnostní přesun zátěže na procesor do vlákna na pozadí, grafika už nezamrzne
+            val newGrid = withContext(Dispatchers.Default) {
+                engine.generateGame(mode, difficulty)
+            }
+
             _state.value = SudokuGameState(
                 grid = newGrid,
                 currentMode = mode,
@@ -126,10 +134,8 @@ class SudokuViewModel(application: Application) : AndroidViewModel(application) 
         if (currentState.isNotesMode) {
             val newNotes = cell.notes.toMutableSet()
             if (newNotes.contains(number)) {
-                // Pokud už číslo v poznámce je, smažeme ho
                 newNotes.remove(number)
             } else if (newNotes.size < 2) {
-                // Přidáme nové číslo jen pokud jich je tam zatím méně než 2
                 newNotes.add(number)
             }
             newGrid[row][col] = cell.copy(notes = newNotes, value = 0, isError = false)
