@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cz.mares.sudoku.engine.Difficulty
@@ -26,6 +27,19 @@ import cz.mares.sudoku.engine.GameMode
 import cz.mares.sudoku.engine.SudokuCell
 import cz.mares.sudoku.ui.theme.SudokuTheme
 import cz.mares.sudoku.viewmodel.SudokuViewModel
+
+// Mapa regionů pro Jigsaw (shodná s enginem)
+private val JIGSAW_LAYOUT = arrayOf(
+    intArrayOf(0, 0, 0, 0, 1, 1, 1, 2, 2),
+    intArrayOf(0, 0, 0, 0, 1, 1, 1, 2, 2),
+    intArrayOf(0, 3, 3, 3, 1, 1, 1, 2, 2),
+    intArrayOf(3, 3, 3, 3, 4, 4, 4, 2, 2),
+    intArrayOf(3, 3, 5, 5, 4, 4, 4, 2, 7),
+    intArrayOf(6, 6, 5, 5, 4, 4, 4, 7, 7),
+    intArrayOf(6, 6, 5, 5, 5, 8, 8, 7, 7),
+    intArrayOf(6, 6, 5, 5, 8, 8, 8, 7, 7),
+    intArrayOf(6, 6, 6, 8, 8, 8, 8, 7, 7)
+)
 
 class MainActivity : ComponentActivity() {
 
@@ -82,8 +96,7 @@ fun SudokuScreen(viewModel: SudokuViewModel, modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxSize()
             .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         TopBar(
             timerSeconds = state.timerSeconds,
@@ -91,16 +104,21 @@ fun SudokuScreen(viewModel: SudokuViewModel, modifier: Modifier = Modifier) {
             onNewGameClick = { showNewGameDialog = true }
         )
 
-        if (state.grid.isNotEmpty()) {
-            SudokuGrid(
-                grid = state.grid,
-                selectedRow = state.selectedRow,
-                selectedCol = state.selectedCol,
-                mode = state.currentMode,
-                onCellClick = { r, c -> viewModel.selectCell(r, c) }
-            )
-        } else {
-            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            contentAlignment = Alignment.Center
+        ) {
+            if (state.grid.isNotEmpty()) {
+                SudokuGrid(
+                    grid = state.grid,
+                    selectedRow = state.selectedRow,
+                    selectedCol = state.selectedCol,
+                    mode = state.currentMode,
+                    onCellClick = { r, c -> viewModel.selectCell(r, c) }
+                )
+            } else {
                 CircularProgressIndicator()
             }
         }
@@ -131,7 +149,7 @@ fun TopBar(timerSeconds: Int, mode: GameMode, onNewGameClick: () -> Unit) {
         Button(onClick = onNewGameClick) {
             Text("Nová hra (${mode.name})")
         }
-        Text(text = String.format("Čas: %02d:%02d", minutes, seconds), fontSize = 20.sp)
+        Text(text = String.format("Čas: %02d:%02d", minutes, seconds), fontSize = 20.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -215,7 +233,6 @@ fun SudokuGrid(
 ) {
     Column(
         modifier = Modifier
-            .fillMaxWidth()
             .aspectRatio(1f)
             .border(2.dp, Color.Black)
     ) {
@@ -225,8 +242,25 @@ fun SudokuGrid(
                     val cell = grid[row][col]
                     val isSelected = row == selectedRow && col == selectedCol
 
-                    val paddingBottom = if (row % 3 == 2 && row != 8) 2.dp else 0.5.dp
-                    val paddingRight = if (col % 3 == 2 && col != 8) 2.dp else 0.5.dp
+                    // Vykreslení tlustých čar podle regionů v Jigsaw nebo standardních 3x3 bloků
+                    val isThickBottom = if (row == 8) false else {
+                        if (mode == GameMode.JIGSAW) {
+                            JIGSAW_LAYOUT[row][col] != JIGSAW_LAYOUT[row + 1][col]
+                        } else {
+                            row % 3 == 2
+                        }
+                    }
+
+                    val isThickRight = if (col == 8) false else {
+                        if (mode == GameMode.JIGSAW) {
+                            JIGSAW_LAYOUT[row][col] != JIGSAW_LAYOUT[row][col + 1]
+                        } else {
+                            col % 3 == 2
+                        }
+                    }
+
+                    val paddingBottom = if (isThickBottom) 2.dp else 0.5.dp
+                    val paddingRight = if (isThickRight) 2.dp else 0.5.dp
 
                     Box(
                         modifier = Modifier
@@ -282,7 +316,6 @@ fun NotesGrid(notes: Set<Int>) {
         contentAlignment = Alignment.Center
     ) {
         Text(
-            // Číslice se seřadí a oddělí mezerou, např. "1 3 7"
             text = notes.sorted().joinToString(" "),
             fontSize = 16.sp,
             color = Color.DarkGray,
@@ -319,7 +352,7 @@ fun ActionRow(
             contentPadding = PaddingValues(0.dp),
             colors = ButtonDefaults.buttonColors(containerColor = if (isHintUsed) Color.Gray else MaterialTheme.colorScheme.primary)
         ) {
-            Text(if (isHintUsed) "Nápověda(0)" else "Nápověda(1)", maxLines = 1, fontSize = 12.sp)
+            Text(if (isHintUsed) "Nápověda(0)" else "Nápověda(1)", maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
         }
 
         Button(
@@ -331,7 +364,7 @@ fun ActionRow(
                 contentColor = if (isNotesMode) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onSurfaceVariant
             )
         ) {
-            Text("Poznámky", maxLines = 1, fontSize = 12.sp)
+            Text("Poznámky", maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
         }
 
         Button(
@@ -340,7 +373,7 @@ fun ActionRow(
             contentPadding = PaddingValues(0.dp),
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
         ) {
-            Text("Smazat", maxLines = 1, fontSize = 12.sp)
+            Text("Smazat", maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
         }
     }
 }
