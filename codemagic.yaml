@@ -1,0 +1,26 @@
+workflows:
+  android-release:
+    name: Sudoku Release Build
+    max_build_duration: 60
+    environment:
+      groups:
+        - google_play_keys # Skupina proměnných v Codemagic
+    scripts:
+      - name: Nastavení lokálního prostředí
+        script: echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/local.properties"
+      - name: Příprava Keystore
+        script: |
+          echo $KEYSTORE_BASE64 | base64 --decode > /tmp/keystore.jks
+      - name: Sestavení Release AAB
+        script: |
+          ./gradlew bundleRelease \
+            -Pandroid.injected.signing.store.file=/tmp/keystore.jks \
+            -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD \
+            -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
+            -Pandroid.injected.signing.key.password=$KEY_PASSWORD
+    artifacts:
+      - app/build/outputs/bundle/release/*.aab
+    publishing:
+      google_play:
+        credentials: $GPLAY_JSON_KEY
+        track: internal
