@@ -11,8 +11,11 @@ android {
         applicationId = "cz.mares.sudoku"
         minSdk = 30
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+
+        // Zde je to kouzlo - Codemagic si sem dosadí své číslo buildu.
+        // Pokud stavíš hru ty na svém počítači, použije se záložní jednička.
+        versionCode = System.getenv("BUILD_NUMBER")?.toInt() ?: 1
+        versionName = "1.0.${System.getenv("BUILD_NUMBER") ?: "0"}"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
