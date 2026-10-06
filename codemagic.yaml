@@ -5,6 +5,16 @@ workflows:
     environment:
       android_signing:
         - sudokukey
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: 'main'
+          include: true
+          source: true
+        - pattern: 'master'
+          include: true
+          source: true
     scripts:
       - name: Sestaveni Android App Bundle pro Google Play
         script: |
