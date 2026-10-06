@@ -8,6 +8,7 @@ workflows:
     scripts:
       - name: Sestaveni Android App Bundle pro Google Play
         script: |
+          chmod +x ./gradlew
           ./gradlew bundleRelease
     artifacts:
       - app/build/outputs/bundle/release/*.aab
