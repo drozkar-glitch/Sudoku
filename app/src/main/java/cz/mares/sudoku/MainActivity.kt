@@ -1,7 +1,9 @@
 package cz.mares.sudoku
 
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -12,11 +14,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -28,7 +29,6 @@ import cz.mares.sudoku.engine.SudokuCell
 import cz.mares.sudoku.ui.theme.SudokuTheme
 import cz.mares.sudoku.viewmodel.SudokuViewModel
 
-// Mapa regionů pro Jigsaw (shodná s enginem)
 private val JIGSAW_LAYOUT = arrayOf(
     intArrayOf(0, 0, 0, 0, 1, 1, 1, 2, 2),
     intArrayOf(0, 0, 0, 0, 1, 1, 1, 2, 2),
@@ -48,18 +48,24 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
-        if (viewModel.state.value.grid.isEmpty()) {
-            viewModel.startNewGame(GameMode.CLASSIC, Difficulty.EASY)
-        }
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         setContent {
             SudokuTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    SudokuScreen(
-                        viewModel = viewModel,
-                        modifier = Modifier.padding(innerPadding)
-                    )
+                    val state by viewModel.state.collectAsState()
+
+                    if (state.isMainMenu) {
+                        MainMenuScreen(
+                            viewModel = viewModel,
+                            modifier = Modifier.padding(innerPadding)
+                        )
+                    } else {
+                        SudokuScreen(
+                            viewModel = viewModel,
+                            modifier = Modifier.padding(innerPadding)
+                        )
+                    }
                 }
             }
         }
@@ -67,12 +73,77 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
-        viewModel.pauseTimer()
+        val currentState = viewModel.state.value
+        if (!currentState.isPaused && !currentState.isGameOver && currentState.grid.isNotEmpty() && !currentState.isMainMenu) {
+            viewModel.togglePause()
+        }
+    }
+}
+
+@Composable
+fun MainMenuScreen(viewModel: SudokuViewModel, modifier: Modifier = Modifier) {
+    val state by viewModel.state.collectAsState()
+    var showNewGameDialog by remember { mutableStateOf(false) }
+    val activity = LocalContext.current as? ComponentActivity // Pro zavření apky
+
+    if (showNewGameDialog) {
+        NewGameDialog(
+            onDismiss = { showNewGameDialog = false },
+            onConfirm = { mode, difficulty ->
+                viewModel.startNewGame(mode, difficulty)
+                showNewGameDialog = false
+            },
+            getBestTime = { mode, diff -> viewModel.getBestTime(mode, diff) }
+        )
     }
 
-    override fun onResume() {
-        super.onResume()
-        viewModel.resumeTimer()
+    Column(
+        modifier = modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "SUDOKU",
+            fontSize = 48.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(bottom = 64.dp)
+        )
+
+        // Pokračovat se ukáže, jen když máme rozehráno
+        if (state.grid.isNotEmpty() && !state.isGameOver) {
+            Button(
+                onClick = { viewModel.resumeGameFromMenu() },
+                modifier = Modifier.fillMaxWidth(0.6f).height(60.dp)
+            ) {
+                Text("Pokračovat", fontSize = 20.sp)
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        Button(
+            onClick = { showNewGameDialog = true },
+            modifier = Modifier.fillMaxWidth(0.6f).height(60.dp)
+        ) {
+            Text("Nová hra", fontSize = 20.sp)
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // OPRAVA: Možnost regulérně vypnout aplikaci přímo z menu
+        OutlinedButton(
+            onClick = { activity?.finish() },
+            modifier = Modifier.fillMaxWidth(0.6f).height(60.dp)
+        ) {
+            Text("Ukončit", fontSize = 20.sp)
+        }
+
+        Spacer(modifier = Modifier.height(80.dp))
+        Text(
+            text = "© 2026 Created by Pavel Mareš",
+            color = Color.Gray,
+            fontSize = 12.sp,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
@@ -80,6 +151,32 @@ class MainActivity : ComponentActivity() {
 fun SudokuScreen(viewModel: SudokuViewModel, modifier: Modifier = Modifier) {
     val state by viewModel.state.collectAsState()
     var showNewGameDialog by remember { mutableStateOf(false) }
+
+    // Systémové tlačítko zpět nás hodí do menu
+    BackHandler {
+        viewModel.returnToMainMenu()
+    }
+
+    // Dialog po výhře
+    if (state.isGameOver && state.grid.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text(text = "Výborně!", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("Hru jsi úspěšně dokončil.\nVýsledný čas: ${String.format("%02d:%02d", state.timerSeconds / 60, state.timerSeconds % 60)}")
+            },
+            confirmButton = {
+                Button(onClick = { showNewGameDialog = true }) {
+                    Text("Nová hra")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.returnToMainMenu() }) {
+                    Text("Do menu")
+                }
+            }
+        )
+    }
 
     if (showNewGameDialog) {
         NewGameDialog(
@@ -101,7 +198,9 @@ fun SudokuScreen(viewModel: SudokuViewModel, modifier: Modifier = Modifier) {
         TopBar(
             timerSeconds = state.timerSeconds,
             mode = state.currentMode,
-            onNewGameClick = { showNewGameDialog = true }
+            isPaused = state.isPaused,
+            onMenuClick = { viewModel.returnToMainMenu() }, // Tlačítko vlevo nahoře nás hodí do menu
+            onPauseClick = { viewModel.togglePause() }
         )
 
         Box(
@@ -110,7 +209,11 @@ fun SudokuScreen(viewModel: SudokuViewModel, modifier: Modifier = Modifier) {
                 .fillMaxWidth(),
             contentAlignment = Alignment.Center
         ) {
-            if (state.grid.isNotEmpty()) {
+            if (state.isPaused) {
+                Button(onClick = { viewModel.togglePause() }, modifier = Modifier.padding(32.dp)) {
+                    Text("Hra pozastavena\nPOKRAČOVAT", textAlign = TextAlign.Center, fontSize = 20.sp)
+                }
+            } else if (state.grid.isNotEmpty()) {
                 SudokuGrid(
                     grid = state.grid,
                     selectedRow = state.selectedRow,
@@ -132,11 +235,26 @@ fun SudokuScreen(viewModel: SudokuViewModel, modifier: Modifier = Modifier) {
         )
 
         Numpad(onNumberClick = { viewModel.onNumberInput(it) })
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "© 2026 Created by Pavel Mareš",
+            color = Color.Gray,
+            fontSize = 12.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
 @Composable
-fun TopBar(timerSeconds: Int, mode: GameMode, onNewGameClick: () -> Unit) {
+fun TopBar(
+    timerSeconds: Int,
+    mode: GameMode,
+    isPaused: Boolean,
+    onMenuClick: () -> Unit,
+    onPauseClick: () -> Unit
+) {
     val minutes = timerSeconds / 60
     val seconds = timerSeconds % 60
     Row(
@@ -146,10 +264,18 @@ fun TopBar(timerSeconds: Int, mode: GameMode, onNewGameClick: () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Button(onClick = onNewGameClick) {
-            Text("Nová hra (${mode.name})")
+        // Tlačítko pro odchod z aktuální hry do Menu
+        Button(onClick = onMenuClick) {
+            Text("Ukončit")
         }
-        Text(text = String.format("Čas: %02d:%02d", minutes, seconds), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = String.format("Čas: %02d:%02d", minutes, seconds), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(onClick = onPauseClick, contentPadding = PaddingValues(0.dp), modifier = Modifier.size(40.dp)) {
+                Text(if (isPaused) "▶" else "❚❚", fontSize = 16.sp)
+            }
+        }
     }
 }
 
@@ -161,6 +287,7 @@ fun NewGameDialog(
 ) {
     var selectedMode by remember { mutableStateOf(GameMode.CLASSIC) }
     var selectedDifficulty by remember { mutableStateOf(Difficulty.EASY) }
+    val activity = LocalContext.current as? ComponentActivity // Odkaz na aktivitu
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -216,8 +343,16 @@ fun NewGameDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Zrušit")
+            Row {
+                // OPRAVA: Ukončit teď nekompromisně vypne celou aplikaci
+                TextButton(onClick = { activity?.finish() }) {
+                    Text("Ukončit")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                // Zrušit jen zavře okénko dialogu
+                TextButton(onClick = onDismiss) {
+                    Text("Zrušit")
+                }
             }
         }
     )
@@ -242,7 +377,6 @@ fun SudokuGrid(
                     val cell = grid[row][col]
                     val isSelected = row == selectedRow && col == selectedCol
 
-                    // Vykreslení tlustých čar podle regionů v Jigsaw nebo standardních 3x3 bloků
                     val isThickBottom = if (row == 8) false else {
                         if (mode == GameMode.JIGSAW) {
                             JIGSAW_LAYOUT[row][col] != JIGSAW_LAYOUT[row + 1][col]
