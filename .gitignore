@@ -1,0 +1,7 @@
+# Ignorovane soubory pro projekt Sudoku (cz.mares.sudoku)
+.gradle/
+build/
+composeApp/build/
+local.properties
+.idea/
+.DS_Store
